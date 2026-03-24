@@ -14,7 +14,7 @@ jobs:
       WRT_NAME: MT3600BE-AUTO
       WRT_SSID: MT3600BE
       WRT_WORD: 12345678
-      WRT_IP: 192.168.8.1
+      WRT_IP: 192.168.68.1
       WRT_PW: password
       WRT_REPO: https://github.com/coolsnowwolf/lede.git
       WRT_BRANCH: master
