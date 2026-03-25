@@ -6,12 +6,15 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  call-core:
     uses: ./.github/workflows/WRT-CORE.yml
     with:
-      WRT_NAME: MT3600BE-AUTO
-      WRT_CONFIG: Config/MT3600BE-MINIMAL.txt
-      WRT_GENERAL: Config/GENERAL-FULL.txt
-      WRT_IP: 192.168.8.1
-      WRT_THEME: argon
-      WRT_RELEASE: false
+      WRT_NAME: GL-MT3600BE-AUTO
+      WRT_REPO: coolsnowwolf/lede
+      WRT_BRANCH: master
+      WRT_COMMIT: 6c3097f
+      DEVICE_CONFIG: Config/MT3600BE-MINIMAL.txt
+      GENERAL_CONFIG: ''
+      RELEASE_TAG: mt3600be-auto
+      ENABLE_RELEASE: true
+      ENABLE_ARTIFACT: true
