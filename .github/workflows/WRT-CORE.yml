@@ -3,208 +3,136 @@ name: WRT-CORE
 on:
   workflow_call:
     inputs:
-      WRT_CONFIG:
-        required: true
-        type: string
-      WRT_THEME:
-        required: true
-        type: string
       WRT_NAME:
         required: true
         type: string
-      WRT_SSID:
-        required: true
-        type: string
-      WRT_WORD:
-        required: true
-        type: string
-      WRT_IP:
-        required: true
-        type: string
-      WRT_PW:
-        required: true
-        type: string
       WRT_REPO:
-        required: true
+        required: false
         type: string
+        default: coolsnowwolf/lede
       WRT_BRANCH:
-        required: true
-        type: string
-      WRT_SOURCE:
-        required: true
-        type: string
-      WRT_PACKAGE:
         required: false
         type: string
-      WRT_TEST:
+        default: master
+      WRT_COMMIT:
         required: false
         type: string
-
-env:
-  GITHUB_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
-  WRT_CONFIG: ${{ inputs.WRT_CONFIG }}
-  WRT_THEME: ${{ inputs.WRT_THEME }}
-  WRT_NAME: ${{ inputs.WRT_NAME }}
-  WRT_SSID: ${{ inputs.WRT_SSID }}
-  WRT_WORD: ${{ inputs.WRT_WORD }}
-  WRT_IP: ${{ inputs.WRT_IP }}
-  WRT_PW: ${{ inputs.WRT_PW }}
-  WRT_REPO: ${{ inputs.WRT_REPO }}
-  WRT_BRANCH: ${{ inputs.WRT_BRANCH }}
-  WRT_SOURCE: ${{ inputs.WRT_SOURCE }}
-  WRT_PACKAGE: ${{ inputs.WRT_PACKAGE }}
-  WRT_TEST: ${{ inputs.WRT_TEST }}
+        default: 6c3097f
+      WRT_CONFIG:
+        required: true
+        type: string
+      WRT_GENERAL:
+        required: false
+        type: string
+        default: ''
+      WRT_IP:
+        required: false
+        type: string
+        default: 192.168.8.1
+      WRT_THEME:
+        required: false
+        type: string
+        default: argon
+      WRT_RELEASE:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
-  core:
-    name: ${{ inputs.WRT_SOURCE }}-${{ inputs.WRT_CONFIG }}
-    runs-on: ubuntu-24.04
-
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
-      - name: Checkout Projects
+      - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Initialization Environment
+      - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo -E apt -yqq update
-          sudo -E apt -yqq full-upgrade
-          sudo -E apt -yqq install \
+          sudo apt-get update
+          sudo apt-get install -y \
             ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext \
-            gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
-            libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev \
-            libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev libtool \
-            lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip \
-            python3-ply python3-docutils python3-setuptools qemu-utils rsync scons \
-            sharutils subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd \
-            zlib1g-dev dos2unix jq rename openssl
-          sudo timedatectl set-timezone "Asia/Shanghai"
+            ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib \
+            g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev \
+            libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev \
+            libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build \
+            p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+            qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip \
+            vim wget xmlto xxd zlib1g-dev
+          sudo timedatectl set-timezone Asia/Shanghai
           sudo mkdir -p /mnt/build_wrt
-          sudo chown "$USER:$USER" /mnt/build_wrt
-          ln -sf /mnt/build_wrt "$GITHUB_WORKSPACE/wrt"
+          sudo chown -R $USER:$GROUPS /mnt/build_wrt
 
-      - name: Initialization Values
+      - name: Clone source and lock commit
+        working-directory: /mnt/build_wrt
         run: |
-          echo "WRT_DATE=$(TZ=UTC-8 date +'%y.%m.%d-%H.%M.%S')" >> "$GITHUB_ENV"
-          echo "WRT_MARK=${GITHUB_REPOSITORY%%/*}" >> "$GITHUB_ENV"
-          echo "WRT_INFO=${WRT_SOURCE%%/*}" >> "$GITHUB_ENV"
-          echo "WRT_TARGET=$(grep -m 1 -oP '^CONFIG_TARGET_\K[\w]+(?==y)' ./Config/${WRT_CONFIG}.txt || echo unknown)" >> "$GITHUB_ENV"
-          echo "WRT_KVER=none" >> "$GITHUB_ENV"
-          echo "WRT_LIST=none" >> "$GITHUB_ENV"
+          git clone --depth=200 https://github.com/${{ inputs.WRT_REPO }} openwrt
+          cd openwrt
+          git checkout ${{ inputs.WRT_BRANCH }}
+          git fetch --depth=200 origin ${{ inputs.WRT_COMMIT }} || true
+          git checkout ${{ inputs.WRT_COMMIT }}
+          echo "SOURCE_DATE=$(date '+%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
 
-      - name: Clone Source Code
+      - name: Load custom feeds and packages
+        working-directory: /mnt/build_wrt/openwrt
         run: |
-          git clone --depth=1 --single-branch --branch "$WRT_BRANCH" "$WRT_REPO" ./wrt
-          cd ./wrt
-          echo "WRT_HASH=$(git log -1 --pretty=format:'%h')" >> "$GITHUB_ENV"
-          PROJECT_MIRRORS_FILE="./scripts/projectsmirrors.json"
-          if [ -f "$PROJECT_MIRRORS_FILE" ]; then
-            sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
-          fi
+          chmod +x $GITHUB_WORKSPACE/Scripts/*.sh
+          $GITHUB_WORKSPACE/Scripts/Packages.sh
 
-      - name: Normalize Scripts
+      - name: Update feeds
+        working-directory: /mnt/build_wrt/openwrt
         run: |
-          find ./ -maxdepth 3 -type f \( -name "*.txt" -o -name "*.sh" -o -name "*.yml" \) -print0 | xargs -0 dos2unix || true
-          find ./Scripts -type f -name "*.sh" -exec chmod +x {} \;
-
-      - name: Restore Cache
-        if: env.WRT_TEST != 'true'
-        uses: actions/cache@v4
-        with:
-          key: ${{ env.WRT_CONFIG }}-${{ env.WRT_INFO }}-${{ env.WRT_HASH }}
-          restore-keys: |
-            ${{ env.WRT_CONFIG }}-${{ env.WRT_INFO }}-
-          path: |
-            ./wrt/.ccache
-            ./wrt/staging_dir/host*
-            ./wrt/staging_dir/tool*
-
-      - name: Update Feeds
-        run: |
-          cd ./wrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Custom Packages
+      - name: Load custom configuration
+        working-directory: /mnt/build_wrt/openwrt
         run: |
-          cd ./wrt/package
-          "$GITHUB_WORKSPACE/Scripts/Packages.sh"
-          "$GITHUB_WORKSPACE/Scripts/Handles.sh"
-
-      - name: Merge Config and Apply Settings
-        run: |
-          cd ./wrt
-          if [[ "${WRT_CONFIG,,}" == *"test"* ]]; then
-            cat "$GITHUB_WORKSPACE/Config/${WRT_CONFIG}.txt" >> .config
-          else
-            cat "$GITHUB_WORKSPACE/Config/${WRT_CONFIG}.txt" "$GITHUB_WORKSPACE/Config/GENERAL.txt" >> .config
+          cp $GITHUB_WORKSPACE/${{ inputs.WRT_CONFIG }} .config
+          if [ -n "${{ inputs.WRT_GENERAL }}" ] && [ -f "$GITHUB_WORKSPACE/${{ inputs.WRT_GENERAL }}" ]; then
+            cat $GITHUB_WORKSPACE/${{ inputs.WRT_GENERAL }} >> .config
           fi
-          "$GITHUB_WORKSPACE/Scripts/Settings.sh"
+          export LAN_IP=${{ inputs.WRT_IP }}
+          export THEME=${{ inputs.WRT_THEME }}
+          $GITHUB_WORKSPACE/Scripts/Settings.sh
           make defconfig
+          echo "===== .config tail ====="
+          tail -n 120 .config || true
 
-      - name: Download Packages
-        if: env.WRT_TEST != 'true'
+      - name: Download package
+        working-directory: /mnt/build_wrt/openwrt
+        run: make download -j8 V=s
+
+      - name: Compile firmware
+        working-directory: /mnt/build_wrt/openwrt
         run: |
-          cd ./wrt
-          make download -j$(nproc) || make download -j1 V=s
+          make -j$(nproc) V=s || make -j1 V=s
 
-      - name: Compile Firmware
-        if: env.WRT_TEST != 'true'
+      - name: Organize firmware
+        id: organize
+        working-directory: /mnt/build_wrt/openwrt
         run: |
-          cd ./wrt
-          make -j$(nproc) || make -j1 V=s
-          bash "$GITHUB_WORKSPACE/Scripts/check_space.sh" || true
+          mkdir -p /mnt/build_wrt/artifacts
+          find bin/targets/ -type f \( -name '*sysupgrade.bin' -o -name '*factory.bin' -o -name '*recovery.itb' -o -name '*preloader.bin' -o -name '*bl31-uboot.fip' -o -name '*manifest' -o -name '*sha256sums' \) -exec cp -f {} /mnt/build_wrt/artifacts/ \;
+          ls -lah /mnt/build_wrt/artifacts
+          echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Show Machine Information
-        run: |
-          cd ./wrt
-          echo "======================="
-          lscpu | grep -E 'Model name|Core|Thread' || true
-          echo "======================="
-          df -h
-          echo "======================="
-          du -h --max-depth=1 . | sort -h | tail -n 30 || true
-          echo "======================="
-
-      - name: Package Firmware
-        run: |
-          cd ./wrt
-          mkdir -p ./upload
-          cp -f ./.config ./upload/Config-${WRT_CONFIG}-${WRT_INFO}-${WRT_BRANCH}-${WRT_DATE}.txt
-          if [[ "$WRT_TEST" != 'true' ]]; then
-            KVER=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^kernel - \K[\d\.]+' {} \; | head -n 1 || true)
-            echo "WRT_KVER=${KVER:-unknown}" >> "$GITHUB_ENV"
-            LIST=$(find ./bin/targets/ -type f -name "*.manifest" -exec grep -oP '^luci-(app|theme)[^ ]*' {} \; | sort -u | tr '\n' ' ' || true)
-            echo "WRT_LIST=${LIST:-none}" >> "$GITHUB_ENV"
-            find ./bin/targets/ -type f \( -name "*.bin" -o -name "*.itb" -o -name "*.img.gz" -o -name "*.tar.gz" -o -name "*.manifest" -o -name "*sha256sums*" -o -name "*.buildinfo" \) -exec cp -f {} ./upload/ \;
-          fi
-
-      - name: Upload Artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.WRT_CONFIG }}-${{ env.WRT_INFO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_DATE }}
-          path: ./wrt/upload/
-          if-no-files-found: warn
+          name: ${{ inputs.WRT_NAME }}-${{ env.SOURCE_DATE }}-${{ env.COMMIT_ID }}
+          path: /mnt/build_wrt/artifacts/
+          if-no-files-found: error
 
-      - name: Release Firmware
-        if: env.WRT_TEST != 'true'
+      - name: Create release
+        if: ${{ inputs.WRT_RELEASE && secrets.RELEASES_TOKEN != '' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.WRT_CONFIG }}-${{ env.WRT_INFO }}-${{ env.WRT_BRANCH }}-${{ env.WRT_DATE }}
-          files: ./wrt/upload/*
-          body: |
-            源码：${{ env.WRT_REPO }}
-            分支：${{ env.WRT_BRANCH }}
-            提交：${{ env.WRT_HASH }}
-            配置：${{ env.WRT_CONFIG }}
-            平台：${{ env.WRT_TARGET }}
-            登录地址：http://${{ env.WRT_IP }}
-            登录密码：${{ env.WRT_PW }}
-            WIFI名称：${{ env.WRT_SSID }}
-            WIFI密码：${{ env.WRT_WORD }}
-            内核版本：${{ env.WRT_KVER }}
-            插件列表：${{ env.WRT_LIST }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.PAT || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASES_TOKEN }}
+          tag_name: ${{ inputs.WRT_NAME }}-${{ env.SOURCE_DATE }}-${{ env.COMMIT_ID }}
+          name: ${{ inputs.WRT_NAME }}-${{ env.SOURCE_DATE }}-${{ env.COMMIT_ID }}
+          files: /mnt/build_wrt/artifacts/*
+          generate_release_notes: true
