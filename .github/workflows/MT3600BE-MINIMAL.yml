@@ -1,0 +1,21 @@
+name: MT3600BE-MINIMAL
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/MT3600BE-MINIMAL.yml'
+      - '.github/workflows/WRT-CORE.yml'
+      - 'Config/MT3600BE-MINIMAL.txt'
+      - 'Scripts/**'
+
+jobs:
+  call-core:
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_NAME: MT3600BE-MINIMAL
+      WRT_CONFIG: Config/MT3600BE-MINIMAL.txt
+      WRT_IP: 192.168.8.1
+      WRT_THEME: argon
+      WRT_RELEASE: false
