@@ -15,6 +15,12 @@ jobs:
       WRT_REPO: coolsnowwolf/lede
       WRT_BRANCH: master
       WRT_CONFIG: Config/MT3600BE-MINIMAL.txt
+
+      # 👇 必须补的两个参数
+      DEVICE_CONFIG: MT3600BE
+      RELEASE_TAG: minimal
+
       WRT_RELEASE: false
       WRT_ARTIFACT: true
+
     secrets: inherit
