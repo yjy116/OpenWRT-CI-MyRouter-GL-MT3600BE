@@ -1,0 +1,23 @@
+name: MT3600BE-FULL
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/MT3600BE-FULL.yml'
+      - '.github/workflows/WRT-CORE.yml'
+      - 'Config/MT3600BE-MINIMAL.txt'
+      - 'Config/GENERAL-FULL.txt'
+      - 'Scripts/**'
+
+jobs:
+  call-core:
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      WRT_NAME: MT3600BE-FULL
+      WRT_CONFIG: Config/MT3600BE-MINIMAL.txt
+      WRT_GENERAL: Config/GENERAL-FULL.txt
+      WRT_IP: 192.168.8.1
+      WRT_THEME: argon
+      WRT_RELEASE: false
