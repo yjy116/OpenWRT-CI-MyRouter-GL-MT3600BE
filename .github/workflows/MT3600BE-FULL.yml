@@ -20,3 +20,4 @@ jobs:
       ENABLE_RELEASE: true
       ENABLE_ARTIFACT: true
     secrets: inherit
+    
