@@ -2,7 +2,7 @@ name: Auto-Build
 
 on:
   schedule:
-    - cron: '0 16 * * *'
+    - cron: "0 16 * * *"
   workflow_dispatch:
 
 permissions:
@@ -10,16 +10,15 @@ permissions:
   actions: read
 
 jobs:
-  call-core:
+  build:
     uses: ./.github/workflows/WRT-CORE.yml
     with:
-      WRT_NAME: GL-MT3600BE-AUTO
+      WRT_NAME: MT3600BE-AUTO
       WRT_REPO: coolsnowwolf/lede
       WRT_BRANCH: master
-      WRT_COMMIT: 6c3097f
       DEVICE_CONFIG: Config/MT3600BE-MINIMAL.txt
-      RELEASE_TAG: mt3600be-auto
+      GENERAL_CONFIG: Config/GENERAL-FULL.txt
+      RELEASE_TAG: auto
       ENABLE_RELEASE: true
       ENABLE_ARTIFACT: true
-      BUILD_THREADS: '4'
     secrets: inherit
