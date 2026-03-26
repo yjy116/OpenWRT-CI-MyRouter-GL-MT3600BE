@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -e
-
-echo "===== Disk space before cleanup ====="
+echo "========== Disk space =========="
 df -h
-
-sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
-sudo apt-get clean || true
-
-echo "===== Disk space after cleanup ====="
-df -h
+echo "========== Memory =========="
+free -h || true
