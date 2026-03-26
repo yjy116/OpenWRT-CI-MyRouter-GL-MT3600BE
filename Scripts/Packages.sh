@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-# Keep the master-tracking build conservative.
-# No third-party feeds are added here by default because recent argon feed metadata was broken
-# and caused package index generation failures.
+# Keep master-tracking builds conservative.
+# Do not add third-party feeds here by default.
+# Recent argon metadata caused feed index generation failures,
+# so this script intentionally uses upstream feeds only.
 
 echo "Using upstream feeds only for master auto-fix build."
