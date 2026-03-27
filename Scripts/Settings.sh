@@ -44,9 +44,12 @@ rm -rf package/custom/netspeedtest/.git package/custom/netspeedtest/.github
 git clone --depth=1 https://github.com/sirpdboy/luci-app-partexp.git package/custom/partexp
 rm -rf package/custom/partexp/.git package/custom/partexp/.github
 
-# Vlmcsd
-svn export https://github.com/immortalwrt/luci/trunk/applications/luci-app-vlmcsd package/custom/luci-app-vlmcsd
-svn export https://github.com/immortalwrt/packages/trunk/net/vlmcsd package/custom/vlmcsd
+# Vlmcsd - LuCI 页面
+svn export https://github.com/immortalwrt/luci/branches/openwrt-21.02/applications/luci-app-vlmcsd package/custom/luci-app-vlmcsd
+
+# Vlmcsd - 核心程序
+git clone --depth=1 https://github.com/cokebar/openwrt-vlmcsd.git package/custom/vlmcsd
+rm -rf package/custom/vlmcsd/.git package/custom/vlmcsd/.github
 
 # 重新纳入 feeds 依赖
 ./scripts/feeds update -a
