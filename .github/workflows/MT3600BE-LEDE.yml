@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+env:
+  REPO_URL: https://github.com/coolsnowwolf/lede.git
+  REPO_BRANCH: master
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -14,7 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show runner information
+      - name: Show runner info
         run: |
           echo "Runner OS: $RUNNER_OS"
           echo "Runner Arch: $RUNNER_ARCH"
@@ -22,7 +26,7 @@ jobs:
           uname -a
           df -h
 
-      - name: Clean disk space before build
+      - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet || true
           sudo rm -rf /opt/ghc || true
@@ -30,7 +34,7 @@ jobs:
           sudo docker image prune -af || true
           df -h
 
-      - name: Prepare build environment
+      - name: Install build dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -65,47 +69,47 @@ jobs:
             libelf-dev \
             xsltproc \
             libc6-dev-i386 \
-            subversion
+            subversion \
+            patch \
+            pkg-config
           df -h
 
       - name: Clone LEDE source
         run: |
-          git clone --depth=1 https://github.com/coolsnowwolf/lede.git openwrt
+          git clone --depth=1 "$REPO_URL" -b "$REPO_BRANCH" openwrt
           cd openwrt
-          echo "SOURCE_REPO=coolsnowwolf/lede" >> $GITHUB_ENV
-          echo "SOURCE_BRANCH=master" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
-          echo "SOURCE_DATE_EPOCH=$(date +%s)" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +'%Y.%m.%d-%H%M')" >> "$GITHUB_ENV"
+          echo "SOURCE_DATE_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
-      - name: Update and install feeds
+      - name: Update feeds
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Apply custom settings
+      - name: Apply custom settings and add extra packages
         run: |
-          if [ -f Scripts/Settings.sh ]; then
-            chmod +x Scripts/Settings.sh
-            cd openwrt
-            bash ../Scripts/Settings.sh
-          else
-            echo "Scripts/Settings.sh not found, skip."
-          fi
-
-      - name: Load custom config
-        run: |
-          if [ ! -f Config/MT3600BE.txt ]; then
-            echo "Config/MT3600BE.txt not found!"
+          if [ ! -f Scripts/Settings.sh ]; then
+            echo "Scripts/Settings.sh not found!"
             exit 1
           fi
-          cat Config/MT3600BE.txt >> openwrt/.config
+          chmod +x Scripts/Settings.sh
+          cd openwrt
+          bash ../Scripts/Settings.sh
+
+      - name: Load .config
+        run: |
+          if [ ! -f .config ]; then
+            echo "Root .config not found!"
+            exit 1
+          fi
+          cp .config openwrt/.config
           cd openwrt
           make defconfig
-          echo "========== .config (filtered) =========="
-          grep -E "CONFIG_TARGET_|CONFIG_PACKAGE_luci" .config || true
+          echo "========== FILTERED .config =========="
+          grep -E "CONFIG_TARGET_|CONFIG_PACKAGE_luci-app-openclash|CONFIG_PACKAGE_luci-app-homeproxy|CONFIG_PACKAGE_luci-app-mosdns|CONFIG_PACKAGE_luci-app-samba4|CONFIG_PACKAGE_luci-app-tailscale|CONFIG_PACKAGE_luci-app-zerotier" .config || true
 
-      - name: Download packages
+      - name: Download sources
         run: |
           cd openwrt
           make download -j8 || make download -j1 V=s
