@@ -3,5 +3,6 @@
 sed -i '$a src-git kenzo https://github.com/kenzok8/openwrt-packages' feeds.conf.default
 sed -i '$a src-git small https://github.com/kenzok8/small' feeds.conf.default
 
-# 如果需要最新版的 HomeProxy 也可以单独拉取（可选）
-# git clone https://github.com/immortalwrt/homeproxy package/homeproxy
+# 强制同步最新版 HomeProxy (针对 ImmortalWrt 环境优化)
+rm -rf package/feeds/luci/luci-app-homeproxy
+git clone https://github.com/immortalwrt/homeproxy package/homeproxy
