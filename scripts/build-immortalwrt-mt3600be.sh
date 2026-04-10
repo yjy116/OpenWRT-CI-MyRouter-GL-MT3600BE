@@ -2,14 +2,18 @@
 
 set -euo pipefail
 
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
 REPO_URL="${REPO_URL:-https://github.com/immortalwrt/immortalwrt.git}"
 REPO_BRANCH="${REPO_BRANCH:-master}"
 WORK_ROOT="${WORK_ROOT:-$HOME/work}"
 BUILD_ROOT="${BUILD_ROOT:-$WORK_ROOT/immortalwrt-mt3600be}"
+VENDOR_ROOT="${VENDOR_ROOT:-$WORK_ROOT/immortalwrt-vendor}"
 DEVICE_NAME="${DEVICE_NAME:-glinet_gl-mt3600be}"
 DEVICE_DTS="${DEVICE_DTS:-mt7987a-glinet-gl-mt3600be}"
-SEED_CONFIG="${SEED_CONFIG:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/configs/mt3600be.seed}"
+SEED_CONFIG="${SEED_CONFIG:-${PROJECT_ROOT}/configs/mt3600be.seed}"
 JOBS="${JOBS:-$(nproc)}"
+OPENCLASH_REPO_URL="${OPENCLASH_REPO_URL:-https://github.com/vernesong/OpenClash.git}"
+OPENCLASH_REPO_BRANCH="${OPENCLASH_REPO_BRANCH:-master}"
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This script must run inside Linux or WSL2."
@@ -40,6 +44,37 @@ if [[ ! -f "${SEED_CONFIG}" ]]; then
   exit 1
 fi
 
+sync_git_repo() {
+  local repo_url="$1"
+  local repo_branch="$2"
+  local repo_dir="$3"
+
+  if [[ ! -d "${repo_dir}/.git" ]]; then
+    git clone --single-branch --branch "${repo_branch}" "${repo_url}" "${repo_dir}"
+    return
+  fi
+
+  git -C "${repo_dir}" fetch origin "${repo_branch}" --depth 1
+  git -C "${repo_dir}" checkout "${repo_branch}"
+  git -C "${repo_dir}" reset --hard "origin/${repo_branch}"
+}
+
+prepare_custom_packages() {
+  local openclash_src="${VENDOR_ROOT}/OpenClash"
+  local openclash_po2lmo_bin
+
+  mkdir -p "${VENDOR_ROOT}"
+
+  sync_git_repo "${OPENCLASH_REPO_URL}" "${OPENCLASH_REPO_BRANCH}" "${openclash_src}"
+  rm -rf "${BUILD_ROOT}/package/luci-app-openclash"
+
+  cp -a "${openclash_src}/luci-app-openclash" "${BUILD_ROOT}/package/luci-app-openclash"
+
+  make -C "${openclash_src}/tools/po2lmo"
+  openclash_po2lmo_bin="${openclash_src}/tools/po2lmo/src"
+  export PATH="${openclash_po2lmo_bin}:${PATH}"
+}
+
 mkdir -p "${WORK_ROOT}"
 
 if [[ ! -d "${BUILD_ROOT}/.git" ]]; then
@@ -59,6 +94,7 @@ fi
 cd "${BUILD_ROOT}"
 
 ./scripts/feeds update -a
+prepare_custom_packages
 ./scripts/feeds install -a
 
 if ! grep -Rqs "define Device/${DEVICE_NAME}" target/linux/mediatek/image/filogic.mk; then
