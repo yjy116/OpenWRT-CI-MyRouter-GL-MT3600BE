@@ -1,0 +1,125 @@
+name: Build ImmortalWrt GL-MT3600BE
+
+on:
+  workflow_dispatch:
+    inputs:
+      immortalwrt_branch:
+        description: ImmortalWrt branch to build
+        required: true
+        default: master
+        type: string
+      cleanup_runner:
+        description: Remove large preinstalled directories before build
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - ".github/workflows/immortalwrt-mt3600be.yml"
+      - "configs/**"
+      - "scripts/**"
+      - "README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mt3600be-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      IMMORTALWRT_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.immortalwrt_branch || 'master' }}
+      WORK_ROOT: /home/runner/work/_fw
+      BUILD_ROOT: /home/runner/work/_fw/immortalwrt-mt3600be
+
+    steps:
+      - name: Checkout helper repo
+        uses: actions/checkout@v5
+
+      - name: Show runner info
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -a
+          df -h
+          nproc
+
+      - name: Free disk space
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup_runner }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/microsoft
+          df -h
+
+      - name: Install build dependencies
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          bash scripts/bootstrap-ubuntu.sh
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${WORK_ROOT}"
+          export REPO_BRANCH="${IMMORTALWRT_BRANCH}"
+          export WORK_ROOT="${WORK_ROOT}"
+          export BUILD_ROOT="${BUILD_ROOT}"
+          export JOBS="$(nproc)"
+          bash scripts/build-immortalwrt-mt3600be.sh 2>&1 | tee "${RUNNER_TEMP}/build.log"
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          TARGET_DIR="${BUILD_ROOT}/bin/targets/mediatek/filogic"
+          ARTIFACT_DIR="${RUNNER_TEMP}/mt3600be-artifacts"
+
+          mkdir -p "${ARTIFACT_DIR}"
+
+          files=(
+            "${TARGET_DIR}"/*sysupgrade*.bin
+            "${TARGET_DIR}"/*.bin
+            "${TARGET_DIR}"/*.itb
+            "${TARGET_DIR}"/*.json
+            "${TARGET_DIR}"/*.manifest
+            "${RUNNER_TEMP}/build.log"
+          )
+
+          for file in "${files[@]}"; do
+            if [[ -f "${file}" ]]; then
+              cp -v "${file}" "${ARTIFACT_DIR}/"
+            fi
+          done
+
+          if ! find "${ARTIFACT_DIR}" -maxdepth 1 -type f | grep -q .; then
+            echo "No artifacts were collected."
+            exit 1
+          fi
+
+          (
+            cd "${ARTIFACT_DIR}"
+            sha256sum * > SHA256SUMS
+            ls -lh
+          )
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mt3600be-immortalwrt-${{ github.run_number }}
+          path: ${{ runner.temp }}/mt3600be-artifacts
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
