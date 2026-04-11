@@ -1,56 +1,45 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 set -eu
 
-OUT="/tmp/mt3600be-stock-info-$(date +%Y%m%d-%H%M%S).txt"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+OUT_DIR="${OUT_DIR:-$PWD/stock-info-$STAMP}"
 
-{
-  echo "## Timestamp"
-  date
-  echo
+mkdir -p "${OUT_DIR}"
 
-  echo "## Kernel"
-  uname -a
-  echo
+save_cmd() {
+  local name="$1"
+  shift
 
-  echo "## OpenWrt Release"
-  cat /etc/openwrt_release 2>/dev/null || true
-  echo
+  {
+    echo "# $*"
+    echo
+    "$@" 2>&1
+  } > "${OUT_DIR}/${name}.txt" || true
+}
 
-  echo "## Board"
-  ubus call system board 2>/dev/null || true
-  echo
+save_cmd board ubus call system board
+save_cmd dmesg dmesg
+save_cmd partitions cat /proc/mtd
+save_cmd mounts mount
+save_cmd block block info
+save_cmd packages opkg list-installed
+save_cmd wireless iwinfo
+save_cmd ip_addr ip addr
+save_cmd ip_route ip route
+save_cmd env fw_printenv
 
-  echo "## Sysinfo"
-  cat /tmp/sysinfo/board_name 2>/dev/null || true
-  printf '\n'
-  tr -d '\000' </proc/device-tree/model 2>/dev/null || true
-  printf '\n'
-  tr -d '\000' </proc/device-tree/compatible 2>/dev/null || true
-  printf '\n\n'
+for path in \
+  /etc/config/network \
+  /etc/config/wireless \
+  /etc/config/firewall \
+  /etc/config/system \
+  /etc/config/dhcp \
+  /etc/config/fstab
+do
+  if [ -f "${path}" ]; then
+    cp "${path}" "${OUT_DIR}/$(basename "${path}").conf"
+  fi
+done
 
-  echo "## MTD"
-  cat /proc/mtd 2>/dev/null || true
-  echo
-
-  echo "## Block Info"
-  block info 2>/dev/null || true
-  echo
-
-  echo "## Network"
-  ip -br link 2>/dev/null || ip link 2>/dev/null || true
-  echo
-
-  echo "## Installed Packages"
-  opkg list-installed 2>/dev/null | grep -Ei 'gl-|luci|mt|wifi|vpn|wireguard|openvpn' || true
-  echo
-
-  echo "## Bootloader Environment"
-  fw_printenv 2>/dev/null || true
-  echo
-
-  echo "## Filtered Dmesg"
-  dmesg 2>/dev/null | grep -Ei 'mtd|ubi|spi|nand|factory|mt76|mt79|mt798|mt799|phy|2p5g' || true
-} >"${OUT}"
-
-echo "Saved to ${OUT}"
+echo "Saved stock information to ${OUT_DIR}"
