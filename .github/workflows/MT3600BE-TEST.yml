@@ -1,0 +1,31 @@
+name: MT3600BE-TEST
+
+on:
+  workflow_dispatch:
+    inputs:
+      immortalwrt_branch:
+        description: ImmortalWrt branch to validate
+        required: true
+        default: master
+        type: string
+      cleanup_runner:
+        description: Remove large preinstalled directories before validation
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      wrt_config: MT3600BE
+      wrt_name: GL-MT3600BE TEST
+      wrt_device_name: glinet_gl-mt3600be
+      wrt_device_dts: mt7987a-glinet-gl-mt3600be
+      wrt_branch: ${{ inputs.immortalwrt_branch }}
+      cleanup_runner: ${{ inputs.cleanup_runner }}
+      publish_release: false
+      test_only: true

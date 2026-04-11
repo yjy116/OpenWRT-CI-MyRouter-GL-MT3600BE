@@ -1,0 +1,295 @@
+name: WRT-CORE
+
+on:
+  workflow_call:
+    inputs:
+      wrt_config:
+        required: true
+        type: string
+      wrt_name:
+        required: true
+        type: string
+      wrt_device_name:
+        required: true
+        type: string
+      wrt_device_dts:
+        required: true
+        type: string
+      wrt_repo:
+        required: false
+        type: string
+        default: https://github.com/immortalwrt/immortalwrt.git
+      wrt_branch:
+        required: false
+        type: string
+        default: master
+      cleanup_runner:
+        required: false
+        type: boolean
+        default: true
+      publish_release:
+        required: false
+        type: boolean
+        default: true
+      test_only:
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ inputs.wrt_config }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ inputs.wrt_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      WRT_CONFIG: ${{ inputs.wrt_config }}
+      WRT_NAME: ${{ inputs.wrt_name }}
+      WRT_DEVICE_LABEL: ${{ inputs.wrt_name }}
+      DEVICE_NAME: ${{ inputs.wrt_device_name }}
+      DEVICE_DTS: ${{ inputs.wrt_device_dts }}
+      REPO_URL: ${{ inputs.wrt_repo }}
+      REPO_BRANCH: ${{ inputs.wrt_branch }}
+      RELEASE_TAG_PREFIX: mt3600be
+
+    steps:
+      - name: Checkout helper repo
+        uses: actions/checkout@v5
+
+      - name: Show runner info
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -a
+          df -h /
+          df -h /mnt || true
+          nproc
+
+      - name: Free disk space
+        if: ${{ inputs.cleanup_runner }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /opt/ghc \
+            /usr/local/lib/android \
+            /opt/microsoft \
+            /usr/share/swift \
+            /usr/local/.ghcup \
+            /usr/share/miniconda \
+            /opt/hostedtoolcache/CodeQL \
+            /opt/google/chrome \
+            /opt/microsoft/msedge \
+            /usr/local/share/chromium
+          sudo docker system prune -af >/dev/null 2>&1 || true
+          sudo apt-get clean
+          df -h /
+          df -h /mnt || true
+
+      - name: Select build workspace
+        id: workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          work_root="/home/runner/work/_fw"
+          if [[ -d /mnt ]] && [[ "$(df --output=avail -k /mnt | tail -1 | tr -dc '0-9')" -gt 10485760 ]]; then
+            work_root="/mnt/_fw"
+          fi
+
+          sudo mkdir -p "${work_root}"
+          sudo chown -R "${USER}:${USER}" "${work_root}"
+
+          cache_root="${work_root}/cache"
+          dl_dir="${cache_root}/dl"
+          ccache_dir="${cache_root}/ccache"
+          build_root="${work_root}/immortalwrt-${WRT_CONFIG}"
+          vendor_root="${work_root}/immortalwrt-vendor"
+
+          mkdir -p "${dl_dir}" "${ccache_dir}"
+
+          {
+            echo "WORK_ROOT=${work_root}"
+            echo "CACHE_ROOT=${cache_root}"
+            echo "DL_DIR=${dl_dir}"
+            echo "CCACHE_DIR=${ccache_dir}"
+            echo "BUILD_ROOT=${build_root}"
+            echo "VENDOR_ROOT=${vendor_root}"
+          } >> "${GITHUB_ENV}"
+
+          {
+            echo "work_root=${work_root}"
+            echo "cache_root=${cache_root}"
+            echo "dl_dir=${dl_dir}"
+            echo "ccache_dir=${ccache_dir}"
+            echo "build_root=${build_root}"
+            echo "vendor_root=${vendor_root}"
+          } >> "${GITHUB_OUTPUT}"
+
+          df -h /
+          df -h "${work_root}"
+
+      - name: Restore download cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.workspace.outputs.dl_dir }}
+          key: ${{ runner.os }}-dl-${{ inputs.wrt_branch }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-dl-${{ inputs.wrt_branch }}-
+            ${{ runner.os }}-dl-
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.workspace.outputs.ccache_dir }}
+          key: ${{ runner.os }}-ccache-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-
+            ${{ runner.os }}-ccache-${{ inputs.wrt_branch }}-
+
+      - name: Install build dependencies
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          bash Scripts/bootstrap-ubuntu.sh
+
+      - name: Prepare source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash Scripts/build-immortalwrt.sh prepare-tree
+
+      - name: Restore host and toolchain cache
+        id: host_tool_cache
+        if: ${{ !inputs.test_only }}
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/host
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/hostpkg
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/toolchain-*
+          key: ${{ runner.os }}-hosttool-full-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-hosttool-full-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-
+            ${{ runner.os }}-hosttool-warm-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-${{ github.sha }}
+            ${{ runner.os }}-hosttool-warm-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-
+            ${{ runner.os }}-hosttool-warm-${{ inputs.wrt_branch }}-
+
+      - name: Detect restored host and toolchain cache
+        id: host_tool_state
+        if: ${{ !inputs.test_only }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cache_present=0
+          if compgen -G "${BUILD_ROOT}/staging_dir/host" >/dev/null; then
+            cache_present=1
+          elif compgen -G "${BUILD_ROOT}/staging_dir/hostpkg" >/dev/null; then
+            cache_present=1
+          elif compgen -G "${BUILD_ROOT}/staging_dir/toolchain-*" >/dev/null; then
+            cache_present=1
+          fi
+
+          echo "cache_present=${cache_present}" >> "${GITHUB_OUTPUT}"
+
+      - name: Prewarm host tools and toolchain
+        if: ${{ !inputs.test_only && steps.host_tool_state.outputs.cache_present != '1' }}
+        shell: bash
+        env:
+          BUILD_VERBOSE: 0
+        run: |
+          set -euo pipefail
+          export JOBS="$(nproc)"
+          bash Scripts/build-immortalwrt.sh prewarm-host-tool
+
+      - name: Save host and toolchain cache
+        if: ${{ !inputs.test_only && steps.host_tool_state.outputs.cache_present != '1' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/host
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/hostpkg
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/toolchain-*
+          key: ${{ runner.os }}-hosttool-warm-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-${{ github.sha }}
+
+      - name: Build firmware or config
+        shell: bash
+        env:
+          TEST_ONLY: ${{ inputs.test_only && '1' || '0' }}
+          BUILD_VERBOSE: 0
+        run: |
+          set -euo pipefail
+          export JOBS="$(nproc)"
+          bash Scripts/build-immortalwrt.sh 2>&1 | tee "${RUNNER_TEMP}/build.log"
+
+      - name: Save full host and toolchain cache
+        if: ${{ !inputs.test_only && success() && steps.host_tool_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/host
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/hostpkg
+            ${{ steps.workspace.outputs.build_root }}/staging_dir/toolchain-*
+          key: ${{ runner.os }}-hosttool-full-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-${{ github.sha }}
+
+      - name: Save download cache
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.workspace.outputs.dl_dir }}
+          key: ${{ runner.os }}-dl-${{ inputs.wrt_branch }}-${{ github.sha }}
+
+      - name: Save ccache
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.workspace.outputs.ccache_dir }}
+          key: ${{ runner.os }}-ccache-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-${{ github.sha }}
+
+      - name: Collect artifacts
+        shell: bash
+        env:
+          TEST_ONLY: ${{ inputs.test_only && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          bash Scripts/Handles.sh collect-artifacts
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.wrt_config }}-${{ github.run_number }}
+          path: ${{ runner.temp }}/mt3600be-artifacts
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Prepare release metadata
+        id: release_meta
+        if: ${{ !inputs.test_only && inputs.publish_release }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash Scripts/Handles.sh prepare-release-metadata
+
+      - name: Publish GitHub release
+        if: ${{ !inputs.test_only && inputs.publish_release }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          gh release create "${{ steps.release_meta.outputs.tag }}" \
+            "${RUNNER_TEMP}/mt3600be-artifacts/"* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${{ steps.release_meta.outputs.title }}" \
+            --notes-file "${{ steps.release_meta.outputs.notes_file }}" \
+            --target "${GITHUB_SHA}" \
+            --prerelease

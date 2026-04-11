@@ -1,0 +1,43 @@
+name: MT3600BE
+
+on:
+  workflow_dispatch:
+    inputs:
+      immortalwrt_branch:
+        description: ImmortalWrt branch to build
+        required: true
+        default: master
+        type: string
+      cleanup_runner:
+        description: Remove large preinstalled directories before build
+        required: true
+        default: true
+        type: boolean
+      publish_release:
+        description: Publish firmware to GitHub Releases after a successful build
+        required: true
+        default: true
+        type: boolean
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - ".github/workflows/**"
+      - "Config/**"
+      - "Scripts/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/WRT-CORE.yml
+    with:
+      wrt_config: MT3600BE
+      wrt_name: GL-MT3600BE
+      wrt_device_name: glinet_gl-mt3600be
+      wrt_device_dts: mt7987a-glinet-gl-mt3600be
+      wrt_branch: ${{ github.event_name == 'workflow_dispatch' && inputs.immortalwrt_branch || 'master' }}
+      cleanup_runner: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup_runner }}
+      publish_release: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_release }}
