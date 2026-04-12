@@ -134,7 +134,7 @@ jobs:
           df -h "${work_root}"
 
       - name: Restore download cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ steps.workspace.outputs.dl_dir }}
           key: ${{ runner.os }}-dl-${{ inputs.wrt_branch }}-${{ github.sha }}
@@ -143,7 +143,7 @@ jobs:
             ${{ runner.os }}-dl-
 
       - name: Restore ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: ${{ steps.workspace.outputs.ccache_dir }}
           key: ${{ runner.os }}-ccache-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-${{ github.sha }}
@@ -168,7 +168,7 @@ jobs:
       - name: Restore host and toolchain cache
         id: host_tool_cache
         if: ${{ !inputs.test_only }}
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ${{ steps.workspace.outputs.build_root }}/staging_dir/host
@@ -211,7 +211,7 @@ jobs:
 
       - name: Save host and toolchain cache
         if: ${{ !inputs.test_only && steps.host_tool_state.outputs.cache_present != '1' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ steps.workspace.outputs.build_root }}/staging_dir/host
@@ -231,7 +231,7 @@ jobs:
 
       - name: Save full host and toolchain cache
         if: ${{ !inputs.test_only && success() && steps.host_tool_cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ${{ steps.workspace.outputs.build_root }}/staging_dir/host
@@ -241,14 +241,14 @@ jobs:
 
       - name: Save download cache
         if: ${{ always() }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ${{ steps.workspace.outputs.dl_dir }}
           key: ${{ runner.os }}-dl-${{ inputs.wrt_branch }}-${{ github.sha }}
 
       - name: Save ccache
         if: ${{ always() }}
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: ${{ steps.workspace.outputs.ccache_dir }}
           key: ${{ runner.os }}-ccache-${{ inputs.wrt_branch }}-${{ inputs.wrt_config }}-${{ github.sha }}
@@ -262,7 +262,7 @@ jobs:
           bash Scripts/Handles.sh collect-artifacts
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.wrt_config }}-${{ github.run_number }}
           path: ${{ runner.temp }}/mt3600be-artifacts
